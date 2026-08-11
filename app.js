@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 const KEY='so-tai-chinh-viet-v1', CATS=['Ăn uống','Mua sắm','Đội xe','Lương','Hóa đơn','Khác'];
 const seed={transactions:[{id:'t1',amount:12500000,type:'income',category:'Lương',date:'2026-08-05T08:00',note:'Lương tháng 8'},{id:'t2',amount:85000,type:'expense',category:'Ăn uống',date:'2026-08-08T08:30',note:'Cà phê sáng'},{id:'t3',amount:1200000,type:'expense',category:'Mua sắm',date:'2026-08-07T17:00',note:'Đồ dùng gia đình'},{id:'t4',amount:450000,type:'expense',category:'Đội xe',date:'2026-08-04T09:00',note:'Đổ xăng và gửi xe'}],orders:[{id:'o1',customer:'Công ty Minh Anh',cost:3500000,sell:6200000,date:'2026-08-09T10:00',paid:6200000,supplierPaid:3500000},{id:'o2',customer:'Nguyễn Hoàng Nam',cost:1800000,sell:3200000,date:'2026-08-07T14:00',paid:1000000,supplierPaid:0},{id:'o3',customer:'Shop Mộc Nhiên',cost:4200000,sell:7600000,date:'2026-08-02T11:00',paid:0,supplierPaid:0}],notes:[{id:'n1',title:'Ý tưởng kinh doanh',body:'Tìm thêm nguồn hàng decor bàn làm việc, ưu tiên sản phẩm thân thiện môi trường.',date:'2026-08-08T09:00'},{id:'n2',title:'Nhắc nhở',body:'Kiểm tra lại các khoản chi định kỳ vào ngày 15 hàng tháng.',date:'2026-08-05T09:00'}],businessBalance:0,balanceMoves:[]};
 let state=JSON.parse(localStorage.getItem(KEY)||JSON.stringify(seed));state.businessBalance=+state.businessBalance||0;state.balanceMoves=state.balanceMoves||[];state.profile=state.profile||{name:'Tuấn Anh',email:'',phone:''};state.theme=state.theme||'light';document.documentElement.dataset.theme=state.theme;let view='personal',rangeType='month',customStart='',customEnd='';
-const money=n=>new Intl.NumberFormat('vi-VN').format(+n||0),fmt=n=>`${money(n)} ₫`,parseMoney=v=>+String(v||'').replace(/\D/g,'')||0,esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c])),nowLocal=()=>{const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16)},dt=s=>new Date(String(s).includes('T')?s:`${s}T00:00`),dtf=s=>dt(s).toLocaleString('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}),save=()=>localStorage.setItem(KEY,JSON.stringify(state));
+const money=n=>new Intl.NumberFormat('vi-VN').format(+n||0),fmt=n=>`${money(n)} ₫`,parseMoney=v=>+String(v||'').replace(/\D/g,'')||0,esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c])),nowLocal=()=>{const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16)},dt=s=>new Date(String(s).includes('T')?s:`${s}T00:00`),dtf=s=>dt(s).toLocaleString('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}),save=()=>{pruneData();localStorage.setItem(KEY,JSON.stringify(state));};
 function inRange(s){const d=dt(s),n=new Date();if(rangeType==='all')return true;if(rangeType==='custom')return(!customStart||d>=dt(`${customStart}T00:00`))&&(!customEnd||d<=dt(`${customEnd}T23:59`));if(rangeType==='day')return d.toDateString()===n.toDateString();const st=new Date(n);st.setHours(0,0,0,0);st.setDate(n.getDate()-(rangeType==='week'?6:rangeType==='month'?30:365));return d>=st}
 function filters(){return `<div class="filters">${[['day','Hôm nay'],['week','Tuần này'],['month','Tháng này'],['year','Năm nay'],['all','Tất cả'],['custom','Tùy chỉnh']].map(x=>`<button class="filter ${rangeType===x[0]?'active':''}" data-range="${x[0]}">${x[1]}</button>`).join('')}</div>${rangeType==='custom'?`<div class="custom-range"><input type="date" id="start-date" value="${customStart}"><span>đến</span><input type="date" id="end-date" value="${customEnd}"></div>`:''}`}
 function period(){return rangeType==='day'?'hôm nay':rangeType==='week'?'tuần này':rangeType==='year'?'năm nay':rangeType==='all'?'tất cả':'tháng này'}
@@ -125,3 +125,86 @@ async function bootCloud() {
   });
 }
 bootCloud();
+
+// Quy tắc dung lượng và trải nghiệm mới: chỉ giữ 30 ghi chú/lịch sử gần nhất.
+function pruneData(){
+  state.notes=(state.notes||[]).slice().sort((a,b)=>(b.pinned?1:0)-(a.pinned?1:0)||dt(b.date)-dt(a.date)).slice(0,30);
+  state.history=(state.history||[]).slice().sort((a,b)=>dt(b.date)-dt(a.date)).slice(0,30);
+  state.orders=(state.orders||[]).map(o=>({...o,
+    supplierDeposit:+o.supplierDeposit||0,
+    customerDeposit:+o.customerDeposit||0,
+    supplierPaid:Math.max(+o.supplierPaid||0,+o.supplierDeposit||0),
+    customerPaid:Math.max(+o.customerPaid||+o.paid||0,+o.customerDeposit||0)
+  }));
+}
+pruneData();
+const cloudNormaliseV2=normaliseState;
+normaliseState=function(data){
+  const next=cloudNormaliseV2(data);
+  state=next; pruneData();
+  return state;
+};
+
+const incomeCategories=['Lương','Đầu tư','Kinh doanh','Thưởng','Khác'];
+const expenseCategories=['Ăn uống','Mua sắm','Đội xe','Hóa đơn','Giáo dục','Y tế','Khác'];
+const openModalV2=openModal;
+openModal=function(type,item={}){
+  openModalV2(type,item);
+  if(type!=='tx') return;
+  const form=document.querySelector('#modal-form'), select=form?.querySelector('[name=category]'), typeSelect=form?.querySelector('[name=txType]');
+  if(!select||!typeSelect) return;
+  const refreshCategories=()=>{
+    const list=typeSelect.value==='income'?incomeCategories:expenseCategories;
+    const selected=select.value||item.category;
+    select.innerHTML=list.map(c=>`<option value="${esc(c)}" ${c===selected?'selected':''}>${c}</option>`).join('');
+    if(selected&&!list.includes(selected)) select.insertAdjacentHTML('beforeend',`<option selected value="${esc(selected)}">${esc(selected)}</option>`);
+  };
+  refreshCategories(); typeSelect.addEventListener('change',refreshCategories);
+};
+
+transactionList=function(items){
+  if(!items.length)return'<div class="empty">Chưa có giao dịch nào.</div>';
+  let running=state.transactions.reduce((s,x)=>s+(x.type==='income'?x.amount:-x.amount),0);
+  return items.map(x=>{const after=running;running-=x.type==='income'?x.amount:-x.amount;return `<div class="transaction"><div class="tx-icon ${x.type==='income'?'income':''}">${x.type==='income'?'↓':'↑'}</div><div class="tx-main"><strong>${esc(x.category)}</strong><div>${esc(x.note||'Không có ghi chú')} · ${dtf(x.date)}</div><div class="balance-move ${x.type}">${x.type==='income'?'Số dư tăng':'Số dư giảm'} ${fmt(x.amount)} · Còn lại ${fmt(after)}</div></div><div class="amount ${x.type}">${x.type==='income'?'+':'-'} ${fmt(x.amount)}</div><button class="more edit-tx" data-id="${x.id}" title="Sửa">✎</button><button class="icon-btn delete-tx" data-id="${x.id}" title="Xoá">🗑</button></div>`}).join('');
+};
+
+orders=function(items){
+  if(!items.length)return'<div class="empty">Chưa có đơn hàng nào.</div>';
+  return items.map(x=>{const cp=Math.max(x.customerPaid??x.paid??0,x.customerDeposit||0),sp=Math.max(x.supplierPaid||0,x.supplierDeposit||0),debt=Math.max(0,x.sell-cp),sd=Math.max(0,x.cost-sp),p=x.sell-x.cost;return `<div class="order-card"><div class="order-top"><strong>${esc(x.customer)}</strong><span class="badge ${debt?'badge-debt':'badge-paid'}">${debt?'Khách còn nợ '+fmt(debt):'Đã thu đủ'}</span></div><div class="order-meta"><span>${dtf(x.date)}</span></div><div class="order-values"><div>Giá nhập<strong>${fmt(x.cost)}</strong></div><div>Giá bán<strong>${fmt(x.sell)}</strong></div><div>Lợi nhuận<strong class="income">${fmt(p)}</strong></div></div><div class="order-deposits supplier-line">Nhà cung cấp · Cọc: <b>${fmt(x.supplierDeposit||0)}</b> · Còn nợ: <b class="red">${fmt(sd)}</b></div><div class="order-deposits customer-line">Khách hàng · Cọc: <b>${fmt(x.customerDeposit||0)}</b> · Còn nợ: <b class="amber">${fmt(debt)}</b></div><div class="order-actions"><button class="btn btn-soft update-order" data-id="${x.id}">Cập nhật thanh toán</button><button class="icon-btn edit-order" data-id="${x.id}">✎ Sửa</button><button class="icon-btn delete-order" data-id="${x.id}">🗑 Xoá</button></div></div>`}).join('');
+};
+
+notes=function(){
+  const a=state.notes.filter(x=>inRange(x.date)).sort((x,y)=>(y.pinned?1:0)-(x.pinned?1:0)||dt(y.date)-dt(x.date)).slice(0,30);
+  return `<div class="view-head"><div><div class="eyebrow">GHI CHÚ CÁ NHÂN</div><h1>Không gian ghi chú</h1><p>Lưu lại những ý tưởng và việc quan trọng trong ngày.</p></div><div class="view-actions">${filters()}<button class="btn btn-primary" id="add-note">＋ Ghi chú mới</button></div></div><div class="notes-grid">${a.map((n,i)=>`<div class="card note note-color-${i%5}"><button class="pin-toggle ${n.pinned?'pinned':''}" data-id="${n.id}">${n.pinned?'📌':'☆'}</button><h3>${esc(n.title)}</h3><p>${esc(n.body)}</p><small>Cập nhật ${dtf(n.date)} · <button class="btn-ghost edit-note" data-id="${n.id}">Sửa</button> <button class="btn-ghost delete-note" data-id="${n.id}">Xoá</button></small></div>`).join('')||'<div class="empty">Chưa có ghi chú nào.</div>'}</div>`;
+};
+
+const saveFormV3=saveForm;
+saveForm=function(e){
+  const type=e.currentTarget.dataset.type,id=e.currentTarget.dataset.id;
+  saveFormV3(e);
+  if(type==='order'){
+    const o=id?state.orders.find(x=>x.id===id):state.orders[0];
+    if(o){o.supplierPaid=Math.max(o.supplierPaid||0,o.supplierDeposit||0);o.customerPaid=Math.max(o.customerPaid||0,o.customerDeposit||0);save();layout();}
+  }
+};
+
+function replaceChartsWithInsights(){
+  if(view==='personal'){
+    const cards=document.querySelectorAll('.grid-2>.card');
+    const a=state.transactions.filter(x=>inRange(x.date)), inc=a.filter(x=>x.type==='income').reduce((s,x)=>s+x.amount,0), out=a.filter(x=>x.type==='expense').reduce((s,x)=>s+x.amount,0);
+    const target=cards[0]?.querySelector('.chart');
+    if(target) target.outerHTML=`<div class="insight-panel"><div class="insight-main"><span>Chênh lệch kỳ này</span><strong class="${inc-out>=0?'income':'red'}">${fmt(inc-out)}</strong></div><div class="insight-row"><span>Thu nhập</span><b class="income">${fmt(inc)}</b></div><div class="insight-row"><span>Chi tiêu</span><b class="red">${fmt(out)}</b></div><div class="insight-row"><span>Số giao dịch</span><b>${a.length}</b></div></div>`;
+    cards[0]?.querySelector('.legend')?.remove();
+    const donut=cards[1]?.querySelector('.donut-wrap');
+    if(donut){const cats=expenseCategories.map(c=>({c,v:a.filter(x=>x.type==='expense'&&x.category===c).reduce((s,x)=>s+x.amount,0)})).filter(x=>x.v).sort((x,y)=>y.v-x.v).slice(0,5);donut.outerHTML=`<div class="insight-list">${cats.map((x,i)=>`<div class="insight-row"><span><i class="insight-dot dot-${i}"></i>${x.c}</span><b>${fmt(x.v)} · ${Math.round(x.v/(out||1)*100)}%</b></div>`).join('')||'<div class="empty">Chưa có chi tiêu trong kỳ này.</div>'}</div>`;}
+  }
+  if(view==='business'){
+    const card=document.querySelector('.grid-2>.card');
+    card?.querySelectorAll('.chart,.legend').forEach(x=>x.remove());
+    card?.querySelectorAll('.card-head').forEach(x=>{if(x.querySelector('h3')?.textContent.includes('Doanh thu'))x.remove()});
+    if(card&&!card.querySelector('.business-insight')){const a=state.orders.filter(x=>inRange(x.date)),paid=a.reduce((s,x)=>s+Math.min(x.sell,x.customerPaid??x.paid??x.customerDeposit??0),0),supplier=a.reduce((s,x)=>s+Math.min(x.cost,x.supplierPaid??x.supplierDeposit??0),0);card.insertAdjacentHTML('beforeend',`<div class="business-insight"><div class="insight-main"><span>Thực thu trong kỳ</span><strong class="income">${fmt(paid)}</strong></div><div class="insight-row"><span>Đã trả nhà cung cấp</span><b class="red">${fmt(supplier)}</b></div><div class="insight-row"><span>Đơn còn công nợ</span><b>${a.filter(x=>(x.customerPaid??x.paid??x.customerDeposit??0)<x.sell).length}</b></div></div>`)}
+  }
+}
+const layoutV6=layout;
+layout=function(){layoutV6();replaceChartsWithInsights();};
+if(cloudUser) layout();
