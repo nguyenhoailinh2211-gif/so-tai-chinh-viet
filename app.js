@@ -94,7 +94,7 @@ function authScreen(message='') {
 }
 async function handleAuth(e) {
   e.preventDefault(); const form = new FormData(e.currentTarget), email=form.get('email'), password=form.get('password');
-  const result = authMode==='signin' ? await supabase.auth.signInWithPassword({email,password}) : await supabase.auth.signUp({email,password});
+  const result = authMode==='signin' ? await supabase.auth.signInWithPassword({email,password}) : await supabase.auth.signUp({email,password,options:{emailRedirectTo:window.location.origin}});
   if (result.error) { document.querySelector('#auth-message').textContent=result.error.message; return; }
   if (!result.data.session) { document.querySelector('#auth-message').textContent='Hãy kiểm tra email để xác nhận tài khoản, sau đó đăng nhập.'; return; }
   cloudUser = result.data.user; await loadCloud(); layout();
