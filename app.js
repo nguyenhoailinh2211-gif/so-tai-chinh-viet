@@ -1,3 +1,5 @@
+import { createClient } from '@supabase/supabase-js';
+
 const KEY='so-tai-chinh-viet-v1', CATS=['Ăn uống','Mua sắm','Đội xe','Lương','Hóa đơn','Khác'];
 const seed={transactions:[{id:'t1',amount:12500000,type:'income',category:'Lương',date:'2026-08-05T08:00',note:'Lương tháng 8'},{id:'t2',amount:85000,type:'expense',category:'Ăn uống',date:'2026-08-08T08:30',note:'Cà phê sáng'},{id:'t3',amount:1200000,type:'expense',category:'Mua sắm',date:'2026-08-07T17:00',note:'Đồ dùng gia đình'},{id:'t4',amount:450000,type:'expense',category:'Đội xe',date:'2026-08-04T09:00',note:'Đổ xăng và gửi xe'}],orders:[{id:'o1',customer:'Công ty Minh Anh',cost:3500000,sell:6200000,date:'2026-08-09T10:00',paid:6200000,supplierPaid:3500000},{id:'o2',customer:'Nguyễn Hoàng Nam',cost:1800000,sell:3200000,date:'2026-08-07T14:00',paid:1000000,supplierPaid:0},{id:'o3',customer:'Shop Mộc Nhiên',cost:4200000,sell:7600000,date:'2026-08-02T11:00',paid:0,supplierPaid:0}],notes:[{id:'n1',title:'Ý tưởng kinh doanh',body:'Tìm thêm nguồn hàng decor bàn làm việc, ưu tiên sản phẩm thân thiện môi trường.',date:'2026-08-08T09:00'},{id:'n2',title:'Nhắc nhở',body:'Kiểm tra lại các khoản chi định kỳ vào ngày 15 hàng tháng.',date:'2026-08-05T09:00'}],businessBalance:0,balanceMoves:[]};
 let state=JSON.parse(localStorage.getItem(KEY)||JSON.stringify(seed));state.businessBalance=+state.businessBalance||0;state.balanceMoves=state.balanceMoves||[];state.profile=state.profile||{name:'Tuấn Anh',email:'',phone:''};state.theme=state.theme||'light';document.documentElement.dataset.theme=state.theme;let view='personal',rangeType='month',customStart='',customEnd='';
@@ -41,3 +43,74 @@ moves=function(){return state.balanceMoves.length?state.balanceMoves.map(x=>{con
 historyPage=function(){const labels={tx:'Chi tiêu cá nhân',order:'Kinh doanh',balance:'Kinh doanh',note:'Ghi chú',payment:'Kinh doanh'};return `<div class="view-head"><div><div class="eyebrow">NHẬT KÝ HOẠT ĐỘNG</div><h1>Lịch sử</h1><p>Xem lại các thao tác đã thực hiện trong ứng dụng.</p></div></div><div class="card history-card">${state.history.length?state.history.map((h,i)=>{const title=h.type==='order'&&h.action==='Thêm'?'Tạo đơn hàng':`${h.action} ${h.type==='order'?'đơn hàng':h.type==='payment'?'thanh toán':h.type==='balance'?'số dư':h.type==='note'?'ghi chú':'giao dịch'}`;return `<div class="history-row"><div class="history-icon ${h.action==='Xoá'?'deleted':''}">${h.action==='Xoá'?'🗑':h.action==='Hoàn tác'?'↶':'✓'}</div><div class="history-main"><strong>${title}</strong><div>${labels[h.type]||''}${h.label?' · '+esc(h.label):''} · ${dtf(h.date)}</div></div>${h.action==='Xoá'?`<button class="btn btn-soft undo-history" data-index="${i}">Hoàn tác</button>`:''}</div>`}).join(''):'<div class="empty">Chưa có hoạt động nào.</div>'}</div>`};
 var baseLayoutV5=layout;layout=function(){baseLayoutV5();if(view==='business'){const grid=document.querySelector('.business-grid');if(grid&&!grid.querySelector('.orders-count-card'))grid.insertAdjacentHTML('beforeend',`<div class="card stat-card orders-count-card"><div class="stat-top">Số lượng đơn hàng</div><h2>${state.orders.filter(x=>inRange(x.date)).length}</h2><small>Trong khoảng thời gian đã chọn</small></div>`);const sub=document.querySelector('.grid-2 .card .card-head .muted');if(sub&&sub.textContent.includes('Nạp/rút'))sub.textContent='Thu/chi theo thanh toán'}};
 layout();
+
+// Supabase: tài khoản riêng, lưu cloud và đồng bộ realtime giữa các thiết bị.
+const supabase = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY);
+let cloudUser = null, cloudChannel = null, cloudApplying = false, cloudSaveTimer = null, authMode = 'signin';
+const nativeStorageSet = localStorage.setItem.bind(localStorage);
+localStorage.setItem = (key, value) => {
+  nativeStorageSet(key, value);
+  if (key === KEY && cloudUser && !cloudApplying) {
+    clearTimeout(cloudSaveTimer);
+    cloudSaveTimer = setTimeout(() => saveCloud(JSON.parse(value)), 350);
+  }
+};
+function normaliseState(data) {
+  return {...seed, ...data, transactions:data?.transactions||[], orders:data?.orders||[], notes:data?.notes||[], balanceMoves:data?.balanceMoves||[], history:data?.history||[], profile:data?.profile||{name:'Tuấn Anh',email:'',phone:''}, theme:data?.theme||'light'};
+}
+async function saveCloud(data) {
+  if (!cloudUser) return;
+  const { error } = await supabase.from('app_states').upsert({user_id: cloudUser.id, data, updated_at: new Date().toISOString()});
+  if (error) toast('Không thể đồng bộ: ' + error.message);
+}
+async function loadCloud() {
+  const { data, error } = await supabase.from('app_states').select('data').eq('user_id', cloudUser.id).maybeSingle();
+  if (error) { toast('Không thể tải dữ liệu cloud'); return; }
+  cloudApplying = true;
+  if (data?.data) state = normaliseState(data.data);
+  else await supabase.from('app_states').insert({user_id: cloudUser.id, data: state});
+  nativeStorageSet(KEY, JSON.stringify(state));
+  document.documentElement.dataset.theme = state.theme || 'light';
+  cloudApplying = false;
+  subscribeCloud();
+}
+function subscribeCloud() {
+  if (cloudChannel) supabase.removeChannel(cloudChannel);
+  cloudChannel = supabase.channel('app-state-' + cloudUser.id).on('postgres_changes', {event:'*', schema:'public', table:'app_states', filter:'user_id=eq.' + cloudUser.id}, payload => {
+    if (!payload.new?.data) return;
+    cloudApplying = true;
+    state = normaliseState(payload.new.data);
+    nativeStorageSet(KEY, JSON.stringify(state));
+    document.documentElement.dataset.theme = state.theme || 'light';
+    cloudApplying = false;
+    layout();
+    toast('Dữ liệu vừa được đồng bộ realtime');
+  }).subscribe();
+}
+function authScreen(message='') {
+  document.querySelector('#app').innerHTML = `<main class="auth-shell"><section class="auth-card"><div class="brand"><span class="brand-mark">↗</span>Sổ Tài Chính</div><div class="eyebrow">ĐỒNG BỘ MỌI THIẾT BỊ</div><h1>${authMode==='signin'?'Đăng nhập tài khoản':'Tạo tài khoản mới'}</h1><p>${authMode==='signin'?'Đăng nhập để xem dữ liệu của bạn trên mọi trình duyệt.':'Tạo tài khoản để lưu dữ liệu an toàn trên cloud.'}</p><form id="auth-form"><label>Email<input name="email" type="email" autocomplete="email" required placeholder="you@example.com"></label><label>Mật khẩu<input name="password" type="password" autocomplete="current-password" required minlength="6" placeholder="Tối thiểu 6 ký tự"></label><button class="btn btn-primary auth-submit">${authMode==='signin'?'Đăng nhập':'Đăng ký'}</button></form><div id="auth-message" class="auth-message">${esc(message)}</div><button class="btn btn-ghost auth-switch">${authMode==='signin'?'Chưa có tài khoản? Đăng ký':'Đã có tài khoản? Đăng nhập'}</button></section></main>`;
+  document.querySelector('#auth-form').onsubmit = handleAuth;
+  document.querySelector('.auth-switch').onclick = () => { authMode = authMode==='signin'?'signup':'signin'; authScreen(); };
+}
+async function handleAuth(e) {
+  e.preventDefault(); const form = new FormData(e.currentTarget), email=form.get('email'), password=form.get('password');
+  const result = authMode==='signin' ? await supabase.auth.signInWithPassword({email,password}) : await supabase.auth.signUp({email,password});
+  if (result.error) { document.querySelector('#auth-message').textContent=result.error.message; return; }
+  if (!result.data.session) { document.querySelector('#auth-message').textContent='Hãy kiểm tra email để xác nhận tài khoản, sau đó đăng nhập.'; return; }
+  cloudUser = result.data.user; await loadCloud(); layout();
+}
+var cloudBaseLayout = layout;
+layout = function() {
+  if (!cloudUser) { authScreen(); return; }
+  cloudBaseLayout();
+  const actions = document.querySelector('.top-right');
+  if (actions && !document.querySelector('#cloud-logout')) actions.insertAdjacentHTML('afterbegin', '<button class="top-icon" id="cloud-logout" title="Đăng xuất">⇥</button>');
+  document.querySelector('#cloud-logout')?.addEventListener('click', async () => { await supabase.auth.signOut(); cloudUser=null; if(cloudChannel) supabase.removeChannel(cloudChannel); authScreen('Bạn đã đăng xuất.'); });
+};
+async function bootCloud() {
+  const { data:{session} } = await supabase.auth.getSession();
+  if (session?.user) { cloudUser=session.user; await loadCloud(); }
+  layout();
+  supabase.auth.onAuthStateChange((event, session) => { if (event==='SIGNED_OUT') { cloudUser=null; authScreen('Bạn đã đăng xuất.'); } });
+}
+bootCloud();
