@@ -145,8 +145,8 @@ normaliseState=function(data){
   return state;
 };
 
-const incomeCategories=['Lương','Đầu tư','Kinh doanh','Thưởng','Khác'];
-const expenseCategories=['Ăn uống','Mua sắm','Đội xe','Hóa đơn','Giáo dục','Y tế','Khác'];
+const incomeCategories=['Lương','Đầu Tư','Kinh Doanh','Thưởng','Khác'];
+const expenseCategories=['Ăn Uống','Mua Sắm','Tiền Nhà','Tiền Học','Y Tế','Khác'];
 const openModalV2=openModal;
 openModal=function(type,item={}){
   openModalV2(type,item);
@@ -207,4 +207,14 @@ function replaceChartsWithInsights(){
 }
 const layoutV6=layout;
 layout=function(){layoutV6();replaceChartsWithInsights();};
+if(cloudUser) layout();
+
+function decorateNavigation(){
+  const icons={personal:'◉',business:'▣',notes:'✦',history:'◷'};
+  const labels={personal:'Quản lí chi tiêu',business:'Kinh doanh',notes:'Ghi chú',history:'Lịch sử'};
+  document.querySelectorAll('.sidebar [data-view]').forEach(btn=>{const key=btn.dataset.view;if(!icons[key])return;btn.innerHTML=`<span class="nav-symbol">${icons[key]}</span><span>${labels[key]}</span>`});
+  document.querySelectorAll('.bottom-nav [data-view]').forEach(btn=>{const key=btn.dataset.view;if(!icons[key])return;btn.innerHTML=`<span class="nav-symbol">${icons[key]}</span><span>${labels[key]}</span>`});
+}
+const layoutV7=layout;
+layout=function(){layoutV7();decorateNavigation();};
 if(cloudUser) layout();
