@@ -96,7 +96,7 @@ async function handleAuth(e) {
   e.preventDefault(); const form = new FormData(e.currentTarget), email=form.get('email'), password=form.get('password');
   const result = authMode==='signin' ? await supabase.auth.signInWithPassword({email,password}) : await supabase.auth.signUp({email,password,options:{emailRedirectTo:window.location.origin}});
   if (result.error) { document.querySelector('#auth-message').textContent=result.error.message; return; }
-  if (!result.data.session) { document.querySelector('#auth-message').textContent='Hãy kiểm tra email để xác nhận tài khoản, sau đó đăng nhập.'; return; }
+  if (!result.data.session) { document.querySelector('#auth-message').textContent='Tài khoản đã được tạo. Nếu hệ thống yêu cầu xác nhận email, hãy mở email rồi đăng nhập lại.'; return; }
   cloudUser = result.data.user; await loadCloud(); layout();
 }
 var cloudBaseLayout = layout;
@@ -111,6 +111,17 @@ async function bootCloud() {
   const { data:{session} } = await supabase.auth.getSession();
   if (session?.user) { cloudUser=session.user; await loadCloud(); }
   layout();
-  supabase.auth.onAuthStateChange((event, session) => { if (event==='SIGNED_OUT') { cloudUser=null; authScreen('Bạn đã đăng xuất.'); } });
+  supabase.auth.onAuthStateChange(async (event, session) => {
+    if (event==='SIGNED_IN' && session?.user && cloudUser?.id !== session.user.id) {
+      cloudUser=session.user;
+      await loadCloud();
+      layout();
+    }
+    if (event==='SIGNED_OUT') {
+      cloudUser=null;
+      if (cloudChannel) supabase.removeChannel(cloudChannel);
+      authScreen('Bạn đã đăng xuất.');
+    }
+  });
 }
 bootCloud();
