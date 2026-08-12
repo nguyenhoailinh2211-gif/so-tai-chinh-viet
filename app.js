@@ -92,7 +92,7 @@ function subscribeCloud() {
   }).subscribe();
 }
 function authScreen(message='') {
-  document.querySelector('#app').innerHTML = `<main class="auth-shell"><section class="auth-card"><div class="brand"><span class="brand-mark">↗</span>Sổ Tài Chính</div><div class="eyebrow">ĐỒNG BỘ MỌI THIẾT BỊ</div><h1>${authMode==='signin'?'Đăng nhập tài khoản':'Tạo tài khoản mới'}</h1><p>${authMode==='signin'?'Đăng nhập để xem dữ liệu của bạn trên mọi trình duyệt.':'Tạo tài khoản để lưu dữ liệu an toàn trên cloud.'}</p><form id="auth-form"><label>Email<input name="email" type="email" autocomplete="email" required placeholder="you@example.com"></label><label>Mật khẩu<input name="password" type="password" autocomplete="current-password" required minlength="6" placeholder="Tối thiểu 6 ký tự"></label><button class="btn btn-primary auth-submit">${authMode==='signin'?'Đăng nhập':'Đăng ký'}</button></form><div id="auth-message" class="auth-message">${esc(message)}</div><button class="btn btn-ghost auth-switch">${authMode==='signin'?'Chưa có tài khoản? Đăng ký':'Đã có tài khoản? Đăng nhập'}</button></section></main>`;
+  document.querySelector('#app').innerHTML = `<main class="auth-shell"><section class="auth-card"><div class="auth-orb auth-orb-one"></div><div class="auth-orb auth-orb-two"></div><div class="auth-brand"><span class="brand-mark">↗</span><div><strong>Sổ Tài Chính</strong><small>Quản lý tài chính thông minh</small></div></div><div class="eyebrow">ĐỒNG BỘ MỌI THIẾT BỊ</div><h1>${authMode==='signin'?'Chào mừng bạn trở lại':'Bắt đầu quản lý tài chính'}</h1><p>${authMode==='signin'?'Đăng nhập để tiếp tục theo dõi dòng tiền của bạn.':'Tạo tài khoản để lưu dữ liệu an toàn trên cloud.'}</p><form id="auth-form"><label>Email<input name="email" type="email" autocomplete="email" required placeholder="Nhập email của bạn"></label><label>Mật khẩu<input name="password" type="password" autocomplete="current-password" required minlength="6" placeholder="Tối thiểu 6 ký tự"></label><button class="btn btn-primary auth-submit">${authMode==='signin'?'Đăng nhập':'Đăng ký ngay'} <span>→</span></button></form><div id="auth-message" class="auth-message">${esc(message)}</div><button class="btn btn-ghost auth-switch">${authMode==='signin'?'Chưa có tài khoản? Đăng ký':'Đã có tài khoản? Đăng nhập'}</button><div class="auth-credit">Hệ thống được phát triển bởi Nguyễn Linh</div></section></main>`;
   document.querySelector('#auth-form').onsubmit = handleAuth;
   document.querySelector('.auth-switch').onclick = () => { authMode = authMode==='signin'?'signup':'signin'; authScreen(); };
 }
@@ -215,6 +215,25 @@ function replaceChartsWithInsights(){
 const layoutV6=layout;
 layout=function(){layoutV6();replaceChartsWithInsights();};
 if(cloudUser) layout();
+
+// Xác nhận reset bằng popup đồng bộ với giao diện ứng dụng.
+function showResetConfirm(section){
+  const labels={personal:'giao dịch cá nhân',business:'dữ liệu kinh doanh',notes:'ghi chú',history:'lịch sử',all:'toàn bộ dữ liệu'};
+  document.querySelector('.reset-confirm-back')?.remove();
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal-back reset-confirm-back"><div class="modal reset-confirm-modal"><div class="reset-warning-icon">!</div><div class="modal-head"><h2>Xác nhận reset</h2><button class="close-reset" aria-label="Đóng">×</button></div><p>Bạn có chắc muốn xoá <b>${labels[section]}</b> không?</p><div class="reset-notice">Dữ liệu sau khi reset sẽ không thể khôi phục.</div><div class="form-actions"><button type="button" class="btn btn-ghost close-reset">Hủy bỏ</button><button type="button" class="btn btn-danger confirm-reset">Xác nhận reset</button></div></div></div>`);
+  document.querySelectorAll('.close-reset').forEach(button=>button.onclick=()=>document.querySelector('.reset-confirm-back')?.remove());
+  document.querySelector('.confirm-reset').onclick=()=>{const labels={personal:'giao dịch',business:'dữ liệu kinh doanh',notes:'ghi chú',history:'lịch sử',all:'toàn bộ dữ liệu'};if(section==='personal')state.transactions=[];if(section==='business'){state.orders=[];state.businessBalance=0;state.balanceMoves=[]}if(section==='notes')state.notes=[];if(section==='history')state.history=[];if(section==='all'){state.transactions=[];state.orders=[];state.notes=[];state.history=[];state.businessBalance=0;state.balanceMoves=[]}save();document.querySelector('.reset-confirm-back')?.remove();layout();toast(`Đã reset ${labels[section]}`)};
+}
+resetSection=section=>showResetConfirm(section);
+
+// Bản trình bày Dashboard mới: tạo khu vực tổng quan nổi bật ngay dưới bộ lọc.
+const personalBaseDashboard=personal;
+personal=function(){
+  return personalBaseDashboard().replace(
+    '<div class="cards">',
+    '<div class="dashboard-overview"><div><span class="dashboard-kicker">TỔNG QUAN HÔM NAY</span><h2>Bức tranh tài chính của bạn</h2><p>Thu nhập, chi tiêu và số dư được cập nhật tức thì.</p></div><div class="dashboard-pulse"><span class="pulse-dot"></span><span>Đang đồng bộ realtime</span></div></div><div class="cards">'
+  );
+};
 
 // Cấu hình quản trị: reset riêng từng nhóm dữ liệu mà không ảnh hưởng hồ sơ và giao diện.
 function configPage(){return `<div class="view-head"><div><div class="eyebrow">QUẢN TRỊ HỆ THỐNG</div><h1>Cấu hình</h1><p>Kiểm soát và làm mới dữ liệu theo từng khu vực.</p></div></div><div class="config-grid"><div class="card config-card"><div class="config-icon">◉</div><h3>Quản lí chi tiêu</h3><p>Xoá toàn bộ giao dịch thu và chi cá nhân.</p><button class="btn btn-danger reset-section" data-reset="personal">Reset giao dịch</button></div><div class="card config-card"><div class="config-icon">▣</div><h3>Kinh doanh</h3><p>Xoá đơn hàng, biến động số dư và số dư vốn.</p><button class="btn btn-danger reset-section" data-reset="business">Reset kinh doanh</button></div><div class="card config-card"><div class="config-icon">✦</div><h3>Ghi chú</h3><p>Xoá toàn bộ ghi chú đã lưu.</p><button class="btn btn-danger reset-section" data-reset="notes">Reset ghi chú</button></div><div class="card config-card"><div class="config-icon">◷</div><h3>Lịch sử</h3><p>Xoá nhật ký thao tác đã lưu.</p><button class="btn btn-danger reset-section" data-reset="history">Reset lịch sử</button></div><div class="card config-card config-danger"><div class="config-icon">!</div><h3>Vùng nguy hiểm</h3><p>Xoá toàn bộ dữ liệu ứng dụng, giữ lại thông tin tài khoản.</p><button class="btn btn-danger reset-section" data-reset="all">Reset toàn bộ dữ liệu</button></div></div>`}
