@@ -225,15 +225,6 @@ function showResetConfirm(section){
 }
 resetSection=section=>showResetConfirm(section);
 
-// Bản trình bày Dashboard mới: tạo khu vực tổng quan nổi bật ngay dưới bộ lọc.
-const personalBaseDashboard=personal;
-personal=function(){
-  return personalBaseDashboard().replace(
-    '<div class="cards">',
-    '<div class="dashboard-overview"><div><span class="dashboard-kicker">TỔNG QUAN HÔM NAY</span><h2>Bức tranh tài chính của bạn</h2><p>Thu nhập, chi tiêu và số dư được cập nhật tức thì.</p></div><div class="dashboard-pulse"><span class="pulse-dot"></span><span>Đang đồng bộ realtime</span></div></div><div class="cards">'
-  );
-};
-
 // Cấu hình quản trị: reset riêng từng nhóm dữ liệu mà không ảnh hưởng hồ sơ và giao diện.
 function configPage(){return `<div class="view-head"><div><div class="eyebrow">QUẢN TRỊ HỆ THỐNG</div><h1>Cấu hình</h1><p>Kiểm soát và làm mới dữ liệu theo từng khu vực.</p></div></div><div class="config-grid"><div class="card config-card"><div class="config-icon">◉</div><h3>Quản lí chi tiêu</h3><p>Xoá toàn bộ giao dịch thu và chi cá nhân.</p><button class="btn btn-danger reset-section" data-reset="personal">Reset giao dịch</button></div><div class="card config-card"><div class="config-icon">▣</div><h3>Kinh doanh</h3><p>Xoá đơn hàng, biến động số dư và số dư vốn.</p><button class="btn btn-danger reset-section" data-reset="business">Reset kinh doanh</button></div><div class="card config-card"><div class="config-icon">✦</div><h3>Ghi chú</h3><p>Xoá toàn bộ ghi chú đã lưu.</p><button class="btn btn-danger reset-section" data-reset="notes">Reset ghi chú</button></div><div class="card config-card"><div class="config-icon">◷</div><h3>Lịch sử</h3><p>Xoá nhật ký thao tác đã lưu.</p><button class="btn btn-danger reset-section" data-reset="history">Reset lịch sử</button></div><div class="card config-card config-danger"><div class="config-icon">!</div><h3>Vùng nguy hiểm</h3><p>Xoá toàn bộ dữ liệu ứng dụng, giữ lại thông tin tài khoản.</p><button class="btn btn-danger reset-section" data-reset="all">Reset toàn bộ dữ liệu</button></div></div>`}
 function resetSection(section){const labels={personal:'giao dịch cá nhân',business:'dữ liệu kinh doanh',notes:'ghi chú',history:'lịch sử',all:'toàn bộ dữ liệu'};if(!confirm(`Bạn có chắc muốn reset ${labels[section]} không? Dữ liệu đã reset sẽ không thể khôi phục.`))return;if(section==='personal')state.transactions=[];if(section==='business'){state.orders=[];state.businessBalance=0;state.balanceMoves=[]}if(section==='notes')state.notes=[];if(section==='history')state.history=[];if(section==='all'){state.transactions=[];state.orders=[];state.notes=[];state.history=[];state.businessBalance=0;state.balanceMoves=[]}save();layout();toast(`Đã reset ${labels[section]}`)}
