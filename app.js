@@ -256,7 +256,7 @@ const layoutV8=layout;
 layout=function(){layoutV8();replaceRecentSpendPanel();};
 if(cloudUser) layout();
 
-function installConfigTop(){const top=document.querySelector('.top-right');if(top&&!top.querySelector('#config-top')){const button=document.createElement('button');button.className='top-icon';button.id='config-top';button.title='Cấu hình';button.textContent='⚙';button.onclick=()=>{view='config';layout()};top.insertBefore(button,top.firstChild)}if(view==='config'){const head=document.querySelector('.view-head');if(head&&!head.querySelector('#profile-from-config')){const button=document.createElement('button');button.className='btn btn-soft';button.id='profile-from-config';button.textContent='Chỉnh sửa thông tin';button.onclick=()=>openModal('profile');head.appendChild(button)}}}
+function installConfigTop(){const top=document.querySelector('.top-right');if(top&&!top.querySelector('#config-top')){const button=document.createElement('button');button.className='top-icon';button.id='config-top';button.title='Cấu hình';button.textContent='🛠';button.onclick=()=>{view='config';layout()};top.insertBefore(button,top.firstChild)}if(view==='config'){const head=document.querySelector('.view-head');if(head&&!head.querySelector('#profile-from-config')){const button=document.createElement('button');button.className='btn btn-soft';button.id='profile-from-config';button.textContent='Chỉnh sửa thông tin';button.onclick=()=>openModal('profile');head.appendChild(button)}}}
 const layoutV10=layout;
 layout=function(){layoutV10();installConfigTop()};
 if(cloudUser) layout();
