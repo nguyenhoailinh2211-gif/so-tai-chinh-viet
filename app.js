@@ -216,9 +216,18 @@ const layoutV6=layout;
 layout=function(){layoutV6();replaceChartsWithInsights();};
 if(cloudUser) layout();
 
+// Cấu hình quản trị: reset riêng từng nhóm dữ liệu mà không ảnh hưởng hồ sơ và giao diện.
+function configPage(){return `<div class="view-head"><div><div class="eyebrow">QUẢN TRỊ HỆ THỐNG</div><h1>Cấu hình</h1><p>Kiểm soát và làm mới dữ liệu theo từng khu vực.</p></div></div><div class="config-grid"><div class="card config-card"><div class="config-icon">◉</div><h3>Quản lí chi tiêu</h3><p>Xoá toàn bộ giao dịch thu và chi cá nhân.</p><button class="btn btn-danger reset-section" data-reset="personal">Reset giao dịch</button></div><div class="card config-card"><div class="config-icon">▣</div><h3>Kinh doanh</h3><p>Xoá đơn hàng, biến động số dư và số dư vốn.</p><button class="btn btn-danger reset-section" data-reset="business">Reset kinh doanh</button></div><div class="card config-card"><div class="config-icon">✦</div><h3>Ghi chú</h3><p>Xoá toàn bộ ghi chú đã lưu.</p><button class="btn btn-danger reset-section" data-reset="notes">Reset ghi chú</button></div><div class="card config-card"><div class="config-icon">◷</div><h3>Lịch sử</h3><p>Xoá nhật ký thao tác đã lưu.</p><button class="btn btn-danger reset-section" data-reset="history">Reset lịch sử</button></div><div class="card config-card config-danger"><div class="config-icon">!</div><h3>Vùng nguy hiểm</h3><p>Xoá toàn bộ dữ liệu ứng dụng, giữ lại thông tin tài khoản.</p><button class="btn btn-danger reset-section" data-reset="all">Reset toàn bộ dữ liệu</button></div></div>`}
+function resetSection(section){const labels={personal:'giao dịch cá nhân',business:'dữ liệu kinh doanh',notes:'ghi chú',history:'lịch sử',all:'toàn bộ dữ liệu'};if(!confirm(`Bạn có chắc muốn reset ${labels[section]} không? Dữ liệu đã reset sẽ không thể khôi phục.`))return;if(section==='personal')state.transactions=[];if(section==='business'){state.orders=[];state.businessBalance=0;state.balanceMoves=[]}if(section==='notes')state.notes=[];if(section==='history')state.history=[];if(section==='all'){state.transactions=[];state.orders=[];state.notes=[];state.history=[];state.businessBalance=0;state.balanceMoves=[]}save();layout();toast(`Đã reset ${labels[section]}`)}
+function bindConfig(){document.querySelectorAll('.reset-section').forEach(button=>button.onclick=()=>resetSection(button.dataset.reset))}
+function installConfigNavigation(){const side=document.querySelector('.sidebar'),bottom=document.querySelector('.sidebar-bottom');if(side&&!side.querySelector('[data-view="config"]')){const button=document.createElement('button');button.className='nav-btn config-nav';button.dataset.view='config';button.innerHTML='<span class="nav-symbol">⚙</span><span>Cấu hình</span>';button.onclick=()=>{view='config';layout()};side.insertBefore(button,bottom)}if(view==='config'){const content=document.querySelector('.content');if(content){content.innerHTML=configPage()+'<div class="footer-credit">Hệ thống được phát triển bởi Nguyễn Linh</div>'}document.querySelector('.top-title').textContent='Cấu hình'}bindConfig();document.querySelectorAll('.sidebar [data-view="config"]').forEach(x=>x.classList.toggle('active',view==='config'))}
+const layoutV9=layout;
+layout=function(){layoutV9();installConfigNavigation();if(view==='config')decorateNavigation()};
+if(cloudUser) layout();
+
 function decorateNavigation(){
-  const icons={personal:'◉',business:'▣',notes:'✦',history:'◷'};
-  const labels={personal:'Quản lí chi tiêu',business:'Kinh doanh',notes:'Ghi chú',history:'Lịch sử'};
+  const icons={personal:'◉',business:'▣',notes:'✦',history:'◷',config:'⚙'};
+  const labels={personal:'Quản lí chi tiêu',business:'Kinh doanh',notes:'Ghi chú',history:'Lịch sử',config:'Cấu hình'};
   document.querySelectorAll('.sidebar [data-view]').forEach(btn=>{const key=btn.dataset.view;if(!icons[key])return;btn.innerHTML=`<span class="nav-symbol">${icons[key]}</span><span>${labels[key]}</span>`;btn.classList.toggle('active',key===view)});
   document.querySelectorAll('.bottom-nav [data-view]').forEach(btn=>{const key=btn.dataset.view;if(!icons[key])return;btn.innerHTML=`<span class="nav-symbol">${icons[key]}</span><span>${labels[key]}</span>`;btn.classList.toggle('active',key===view)});
 }
@@ -245,4 +254,9 @@ function replaceRecentSpendPanel(){
 }
 const layoutV8=layout;
 layout=function(){layoutV8();replaceRecentSpendPanel();};
+if(cloudUser) layout();
+
+function installConfigTop(){const top=document.querySelector('.top-right');if(top&&!top.querySelector('#config-top')){const button=document.createElement('button');button.className='top-icon';button.id='config-top';button.title='Cấu hình';button.textContent='⚙';button.onclick=()=>{view='config';layout()};top.insertBefore(button,top.firstChild)}if(view==='config'){const head=document.querySelector('.view-head');if(head&&!head.querySelector('#profile-from-config')){const button=document.createElement('button');button.className='btn btn-soft';button.id='profile-from-config';button.textContent='Chỉnh sửa thông tin';button.onclick=()=>openModal('profile');head.appendChild(button)}}}
+const layoutV10=layout;
+layout=function(){layoutV10();installConfigTop()};
 if(cloudUser) layout();
