@@ -332,3 +332,19 @@ if(cloudUser) layout();
 
 const layoutLatest=layout;
 layout=function(){layoutLatest();if(view==='business'){const grid=document.querySelector('.business-grid');if(grid&&!grid.querySelector('.delivery-due-card')){const n=deliveryDueOrders().length;grid.insertAdjacentHTML('beforeend',`<div class="card stat-card delivery-due-card" role="button" tabindex="0"><div class="stat-top">Đơn hàng đến hạn giao</div><h2 class="amber">${n}</h2><small>Trong 3 ngày gần nhất · Xem chi tiết</small></div>`);grid.querySelector('.delivery-due-card').onclick=deliveryDueModal}document.querySelectorAll('.business-grid .stat-card').forEach(c=>{const h=c.querySelector('.stat-top')?.textContent||'';if(h.includes('Công nợ phải thu')){c.classList.add('debt-clickable');c.onclick=()=>debtDetailModal('receivable')}if(h.includes('Công nợ phải trả')){c.classList.add('debt-clickable');c.onclick=()=>debtDetailModal('payable')}});document.querySelectorAll('.history-order').forEach(b=>b.onclick=()=>orderHistoryModal(b.dataset.id));document.querySelectorAll('.update-order').forEach(b=>b.onclick=()=>openModal('payment',state.orders.find(x=>x.id===b.dataset.id)))}};
+
+
+// Sửa cuối luồng thanh toán: luôn render lại sau khi paymentHistory đã ghi.
+const orderHistoryDetail=function(id){
+  const o=state.orders.find(x=>x.id===id); if(!o)return;
+  const panel=(party,label)=>{
+    const rows=partyHistory(o,party),total=party==='customer'?+o.sell||0:+o.cost||0; let paid=0;
+    const body=rows.length?rows.map(x=>{paid+=+x.amount||0;const remaining=Math.max(0,total-paid),status=paid<=0?'Chưa thanh toán':remaining?'Chưa đủ · còn '+fmt(remaining):'Đã thanh toán đủ';return '<div class="history-row"><div class="history-icon '+(party==='customer'?'income':'deleted')+'">'+(x.kind==='deposit'?'◈':'✓')+'</div><div class="history-main"><strong>'+(x.kind==='deposit'?'Đặt cọc':'Thanh toán thêm')+' · '+fmt(x.amount)+'</strong><div>'+dtf(x.date)+'</div><small class="history-status '+(remaining?'pending':'complete')+'">'+status+'</small></div></div>'}).join(''):'<div class="empty">Chưa có cập nhật.</div>';
+    const status=paymentStatus(o,party); return '<section class="payment-history-panel"><div class="payment-history-title"><h3>'+label+'</h3><span class="badge '+(status.remaining?'badge-debt':'badge-paid')+'">'+status.label+'</span></div><div class="payment-history-summary">Đã thanh toán <b>'+fmt(status.paid)+'</b> · Còn lại <b class="'+(status.remaining?'red':'income')+'">'+fmt(status.remaining)+'</b></div>'+body+'</section>';
+  };
+  document.body.insertAdjacentHTML('beforeend','<div class="modal-back order-history-back"><div class="modal order-history-modal"><div class="modal-head"><div><h2>Lịch sử thanh toán</h2><span class="muted">'+esc(o.customer)+'</span></div><button class="close-history">×</button></div><div class="payment-history-grid">'+panel('customer','Khách hàng')+panel('supplier','Nhà cung cấp')+'</div><div class="form-actions"><button type="button" class="btn btn-primary close-history">Đóng</button></div></div></div>');
+  document.querySelectorAll('.close-history').forEach(x=>x.onclick=()=>document.querySelector('.order-history-back')?.remove());
+};
+orderHistoryModal=orderHistoryDetail;
+const saveFormLatest=saveForm;
+saveForm=function(e){saveFormLatest(e);if(e.currentTarget.id==='payment-form'){save();layout();}};
