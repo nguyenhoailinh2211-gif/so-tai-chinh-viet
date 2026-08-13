@@ -50,7 +50,7 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 const supabase = supabaseUrl && supabaseKey && !supabaseKey.startsWith('your-')
   ? createClient(supabaseUrl, supabaseKey)
   : null;
-let cloudUser = null, cloudChannel = null, cloudApplying = false, cloudSaveTimer = null, authMode = 'signin';
+let cloudUser = null, cloudChannel = null, cloudApplying = false, cloudSaveTimer = null, cloudPollTimer = null, cloudLastUpdated = '', authMode = 'signin';
 const nativeStorageSet = localStorage.setItem.bind(localStorage);
 localStorage.setItem = (key, value) => {
   nativeStorageSet(key, value);
@@ -81,24 +81,30 @@ function normaliseState(data) {
 }
 async function saveCloud(data) {
   if (!cloudUser) return;
-  const { error } = await supabase.from('app_states').upsert({user_id: cloudUser.id, data, updated_at: new Date().toISOString()});
+  const updatedAt = new Date().toISOString();
+  const { error } = await supabase.from('app_states').upsert({user_id: cloudUser.id, data, updated_at: updatedAt});
+  if (!error) cloudLastUpdated = updatedAt;
   if (error) toast('Không thể đồng bộ: ' + error.message);
 }
 async function loadCloud() {
-  const { data, error } = await supabase.from('app_states').select('data').eq('user_id', cloudUser.id).maybeSingle();
+  const { data, error } = await supabase.from('app_states').select('data,updated_at').eq('user_id', cloudUser.id).maybeSingle();
   if (error) { toast('Không thể tải dữ liệu cloud'); return; }
   cloudApplying = true;
   if (data?.data) state = normaliseState(data.data);
-  else await supabase.from('app_states').insert({user_id: cloudUser.id, data: state});
+  else await supabase.from('app_states').insert({user_id: cloudUser.id, data: state, updated_at:new Date().toISOString()});
+  cloudLastUpdated = data?.updated_at || new Date().toISOString();
   nativeStorageSet(KEY, JSON.stringify(state));
   document.documentElement.dataset.theme = state.theme || 'light';
   cloudApplying = false;
   subscribeCloud();
+  startCloudPolling();
 }
 function subscribeCloud() {
   if (cloudChannel) supabase.removeChannel(cloudChannel);
   cloudChannel = supabase.channel('app-state-' + cloudUser.id).on('postgres_changes', {event:'*', schema:'public', table:'app_states', filter:'user_id=eq.' + cloudUser.id}, payload => {
     if (!payload.new?.data) return;
+    if (payload.new.updated_at && payload.new.updated_at <= cloudLastUpdated) return;
+    cloudLastUpdated = payload.new.updated_at || new Date().toISOString();
     cloudApplying = true;
     state = normaliseState(payload.new.data);
     nativeStorageSet(KEY, JSON.stringify(state));
@@ -106,7 +112,18 @@ function subscribeCloud() {
     cloudApplying = false;
     layout();
     toast('Dữ liệu vừa được đồng bộ realtime');
-  }).subscribe();
+  }).subscribe(status => {
+    if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') startCloudPolling();
+  });
+}
+function startCloudPolling(){
+  clearInterval(cloudPollTimer);
+  cloudPollTimer=setInterval(async()=>{
+    if(!cloudUser||cloudApplying)return;
+    const {data,error}=await supabase.from('app_states').select('data,updated_at').eq('user_id',cloudUser.id).maybeSingle();
+    if(error||!data?.data||!data.updated_at||data.updated_at<=cloudLastUpdated)return;
+    cloudApplying=true; cloudLastUpdated=data.updated_at; state=normaliseState(data.data); nativeStorageSet(KEY,JSON.stringify(state)); document.documentElement.dataset.theme=state.theme||'light'; cloudApplying=false; layout(); toast('Dữ liệu vừa được đồng bộ');
+  },3000);
 }
 function authScreen(message='') {
   document.querySelector('#app').innerHTML = `<main class="auth-shell"><section class="auth-card"><div class="auth-orb auth-orb-one"></div><div class="auth-orb auth-orb-two"></div><div class="auth-brand"><span class="brand-mark">↗</span><div><strong>Sổ Tài Chính</strong><small>Quản lý tài chính thông minh</small></div></div><div class="eyebrow">ĐỒNG BỘ MỌI THIẾT BỊ</div><h1>${authMode==='signin'?'Chào mừng bạn trở lại':'Bắt đầu quản lý tài chính'}</h1><p>${authMode==='signin'?'Đăng nhập để tiếp tục theo dõi dòng tiền của bạn.':'Tạo tài khoản để lưu dữ liệu an toàn trên cloud.'}</p><form id="auth-form"><label>Email<input name="email" type="email" autocomplete="email" required placeholder="Nhập email của bạn"></label><label>Mật khẩu<input name="password" type="password" autocomplete="current-password" required minlength="6" placeholder="Tối thiểu 6 ký tự"></label><button class="btn btn-primary auth-submit">${authMode==='signin'?'Đăng nhập':'Đăng ký ngay'} <span>→</span></button></form><div id="auth-message" class="auth-message">${esc(message)}</div><button class="btn btn-ghost auth-switch">${authMode==='signin'?'Chưa có tài khoản? Đăng ký':'Đã có tài khoản? Đăng nhập'}</button><div class="auth-credit">Hệ thống được phát triển bởi Nguyễn Linh</div></section></main>`;
@@ -288,6 +305,9 @@ function configPage(){return `<div class="view-head"><div><div class="eyebrow">Q
 function resetSection(section){const labels={personal:'giao dịch cá nhân',business:'dữ liệu kinh doanh',notes:'ghi chú',history:'lịch sử',all:'toàn bộ dữ liệu'};if(!confirm(`Bạn có chắc muốn reset ${labels[section]} không? Dữ liệu đã reset sẽ không thể khôi phục.`))return;if(section==='personal')state.transactions=[];if(section==='business'){state.orders=[];state.businessBalance=0;state.balanceMoves=[]}if(section==='notes')state.notes=[];if(section==='history')state.history=[];if(section==='all'){state.transactions=[];state.orders=[];state.notes=[];state.history=[];state.businessBalance=0;state.balanceMoves=[]}save();layout();toast(`Đã reset ${labels[section]}`)}
 function bindConfig(){document.querySelectorAll('.reset-section').forEach(button=>button.onclick=()=>resetSection(button.dataset.reset))}
 function installConfigNavigation(){const side=document.querySelector('.sidebar'),bottom=document.querySelector('.sidebar-bottom');if(side&&!side.querySelector('[data-view="config"]')){const button=document.createElement('button');button.className='nav-btn config-nav';button.dataset.view='config';button.innerHTML='<span class="nav-symbol">⚙</span><span>Cấu hình</span>';button.onclick=()=>{view='config';layout()};side.insertBefore(button,bottom)}if(view==='config'){const content=document.querySelector('.content');if(content){content.innerHTML=configPage()+'<div class="footer-credit">Hệ thống được phát triển bởi Nguyễn Linh</div>'}document.querySelector('.top-title').textContent='Cấu hình'}bindConfig();document.querySelectorAll('.sidebar [data-view="config"]').forEach(x=>x.classList.toggle('active',view==='config'))}
+function bytesLabel(value){const n=Number(value)||0;return n<1024?`${n} B`:n<1048576?`${(n/1024).toFixed(1)} KB`:`${(n/1048576).toFixed(2)} MB`}
+function renderStorageStats(){if(view!=='config')return;const size=s=>bytesLabel(new Blob([JSON.stringify(s||[])||'']).size),rows=[['Giao dịch cá nhân',state.transactions,'Dung lượng giao dịch'],['Đơn hàng kinh doanh',state.orders,'Dung lượng đơn hàng'],['Biến động số dư',state.balanceMoves,'Dung lượng biến động'],['Ghi chú',state.notes,'Dung lượng ghi chú'],['Lịch sử',state.history,'Dung lượng lịch sử']];document.querySelectorAll('.config-card').forEach(card=>card.querySelector('.storage-usage')?.remove());const cards=[...document.querySelectorAll('.config-card')];rows.forEach((row,i)=>{const card=cards[i];if(!card)return;const el=document.createElement('div');el.className='storage-usage';el.innerHTML=`<span>${row[2]}</span><b>${size(row[1])}</b><small>${row[1]?.length||0} mục</small>`;card.appendChild(el)});const total=document.querySelector('.config-grid');if(total&&!total.querySelector('.storage-total')){const el=document.createElement('div');el.className='storage-total';el.innerHTML=`<span>Dung lượng dữ liệu hiện tại</span><strong>${bytesLabel(new Blob([JSON.stringify(state)]).size)}</strong><small>${cloudUser?'Đã đồng bộ cloud và realtime':'Đang lưu trên thiết bị'}</small>`;total.appendChild(el)}}
+const installConfigWithStats=installConfigNavigation;installConfigNavigation=function(){installConfigWithStats();renderStorageStats()}
 const layoutV9=layout;
 layout=function(){layoutV9();installConfigNavigation();if(view==='config')decorateNavigation()};
 if(cloudUser) layout();
