@@ -166,13 +166,26 @@ function pruneData(){
     customerPaid:Math.max(+o.customerPaid||+o.paid||0,+o.customerDeposit||0)
   }));
 }
+function isOrderPaymentMove(move){
+  return !!move?.orderId||/Khách .* thanh toán|Thanh toán nhà cung cấp cho /i.test(String(move?.note||''));
+}
+function reconcileBusinessBalance(){
+  const manual=(state.balanceMoves||[]).filter(x=>!isOrderPaymentMove(x)).reduce((sum,x)=>sum+(+x.amount||0),0);
+  const realised=(state.orders||[]).reduce((sum,o)=>{
+    const received=Math.max(+o.customerPaid||+o.paid||0,+o.customerDeposit||0);
+    const paidToSupplier=Math.max(+o.supplierPaid||0,+o.supplierDeposit||0);
+    return sum+received-paidToSupplier;
+  },0);
+  state.businessBalance=manual+realised;
+}
 pruneData();
+reconcileBusinessBalance();
 const cloudNormaliseV2=normaliseState;
 normaliseState=function(data){
   const next=cloudNormaliseV2(data);
   const legacyProfitMoves=(next.balanceMoves||[]).filter(x=>String(x.note||'').startsWith('Lợi nhuận đơn hàng'));
   if(legacyProfitMoves.length){next.businessBalance-=legacyProfitMoves.reduce((sum,x)=>sum+(+x.amount||0),0);next.balanceMoves=next.balanceMoves.filter(x=>!String(x.note||'').startsWith('Lợi nhuận đơn hàng'))}
-  state=next; pruneData();
+  state=next; pruneData(); reconcileBusinessBalance();
   return state;
 };
 
@@ -381,8 +394,9 @@ saveForm=function(e){
     const customerAdd=parseMoney(f.get('customerPay')),supplierAdd=parseMoney(f.get('supplierPay')),stamp=nowLocal();o.paymentHistory=o.paymentHistory||[];
     const customerBefore=Math.max(+o.customerPaid||+o.paid||0,+o.customerDeposit||0),supplierBefore=Math.max(+o.supplierPaid||0,+o.supplierDeposit||0);
     const customerNext=Math.min(+o.sell||0,customerBefore+customerAdd),supplierNext=Math.min(+o.cost||0,supplierBefore+supplierAdd);
-    if(customerAdd){const amount=Math.min(customerAdd,Math.max(0,(+o.sell||0)-customerBefore));o.customerPaid=customerNext;o.customerLastPaymentAt=stamp;o.paymentHistory.push({party:'customer',kind:'payment',amount,date:stamp});state.businessBalance+=amount;state.balanceMoves.unshift({id:`m-${Date.now()}`,date:stamp,amount,note:`Khách ${o.customer} thanh toán`});}
-    if(supplierAdd){const amount=Math.min(supplierAdd,Math.max(0,(+o.cost||0)-supplierBefore));o.supplierPaid=supplierNext;o.supplierLastPaymentAt=stamp;o.paymentHistory.push({party:'supplier',kind:'payment',amount,date:stamp});state.businessBalance-=amount;state.balanceMoves.unshift({id:`m-${Date.now()}-s`,date:stamp,amount:-amount,note:`Thanh toán nhà cung cấp cho ${o.customer}`});}
+    if(customerAdd){const amount=Math.min(customerAdd,Math.max(0,(+o.sell||0)-customerBefore));o.customerPaid=customerNext;o.customerLastPaymentAt=stamp;o.paymentHistory.push({party:'customer',kind:'payment',amount,date:stamp});state.balanceMoves.unshift({id:`m-${Date.now()}`,orderId:o.id,date:stamp,amount,note:`Khách ${o.customer} thanh toán`});}
+    if(supplierAdd){const amount=Math.min(supplierAdd,Math.max(0,(+o.cost||0)-supplierBefore));o.supplierPaid=supplierNext;o.supplierLastPaymentAt=stamp;o.paymentHistory.push({party:'supplier',kind:'payment',amount,date:stamp});state.balanceMoves.unshift({id:`m-${Date.now()}-s`,orderId:o.id,date:stamp,amount:-amount,note:`Thanh toán nhà cung cấp cho ${o.customer}`});}
+    reconcileBusinessBalance();
     save();document.querySelector('.modal-back')?.remove();layout();toast('Đã cập nhật thanh toán, công nợ và lịch sử');return;
   }
   saveFormV4(e);
@@ -409,8 +423,8 @@ saveForm=function(e){
   const form=e.currentTarget;
   if(form.dataset.type!=='order'){saveFormBusinessFinal(e);return;}
   const id=form.dataset.id, existing=id?state.orders.find(x=>x.id===id):null;
-  const beforeCustomer=existing?Math.max(+existing.customerPaid||+existing.paid||0,+existing.customerDeposit||0):parseMoney(form.elements.customerDeposit?.value);
-  const beforeSupplier=existing?Math.max(+existing.supplierPaid||0,+existing.supplierDeposit||0):parseMoney(form.elements.supplierDeposit?.value);
+  const beforeCustomer=existing?Math.max(+existing.customerPaid||+existing.paid||0,+existing.customerDeposit||0):0;
+  const beforeSupplier=existing?Math.max(+existing.supplierPaid||0,+existing.supplierDeposit||0):0;
   const customerFull=form.elements.customerPaidFull?.checked===true, supplierFull=form.elements.supplierPaidFull?.checked===true;
   saveFormBusinessFinal(e);
   const order=id?state.orders.find(x=>x.id===id):state.orders[0];
@@ -418,8 +432,9 @@ saveForm=function(e){
   order.paymentHistory=order.paymentHistory||[];
   const stamp=nowLocal(), customerTarget=customerFull?+order.sell||0:Math.max(+order.customerPaid||0,+order.customerDeposit||0), supplierTarget=supplierFull?+order.cost||0:Math.max(+order.supplierPaid||0,+order.supplierDeposit||0);
   const customerDelta=Math.max(0,customerTarget-beforeCustomer), supplierDelta=Math.max(0,supplierTarget-beforeSupplier);
-  if(customerDelta){order.customerPaid=customerTarget;order.customerLastPaymentAt=stamp;order.paymentHistory.push({party:'customer',kind:'payment',amount:customerDelta,date:stamp});state.businessBalance+=customerDelta;state.balanceMoves.unshift({id:`order-customer-${Date.now()}`,date:stamp,amount:customerDelta,note:`Khách ${order.customer} thanh toán`});}
-  if(supplierDelta){order.supplierPaid=supplierTarget;order.supplierLastPaymentAt=stamp;order.paymentHistory.push({party:'supplier',kind:'payment',amount:supplierDelta,date:stamp});state.businessBalance-=supplierDelta;state.balanceMoves.unshift({id:`order-supplier-${Date.now()}`,date:stamp,amount:-supplierDelta,note:`Thanh toán nhà cung cấp cho ${order.customer}`});}
+  if(customerDelta){order.customerPaid=customerTarget;order.customerLastPaymentAt=stamp;order.paymentHistory.push({party:'customer',kind:!existing&&customerDelta===+order.customerDeposit?'deposit':'payment',amount:customerDelta,date:stamp});state.balanceMoves.unshift({id:`order-customer-${Date.now()}`,orderId:order.id,date:stamp,amount:customerDelta,note:`Khách ${order.customer} thanh toán`});}
+  if(supplierDelta){order.supplierPaid=supplierTarget;order.supplierLastPaymentAt=stamp;order.paymentHistory.push({party:'supplier',kind:!existing&&supplierDelta===+order.supplierDeposit?'deposit':'payment',amount:supplierDelta,date:stamp});state.balanceMoves.unshift({id:`order-supplier-${Date.now()}`,orderId:order.id,date:stamp,amount:-supplierDelta,note:`Thanh toán nhà cung cấp cho ${order.customer}`});}
+  reconcileBusinessBalance();
   save();layout();toast('Đã lưu đơn hàng và cập nhật số dư');
 };
 
