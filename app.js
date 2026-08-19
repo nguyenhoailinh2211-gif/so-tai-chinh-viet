@@ -395,3 +395,55 @@ saveForm=function(e){
   }
   saveFormV4(e);
 };
+
+/* Business workflow consolidation: order profit, full-payment shortcuts and delivery state. */
+const businessOrdersRenderer=businessOrdersMarkup;
+businessOrdersMarkup=function(items,compact=false){
+  const active=(items||[]).filter(x=>!x.delivered);
+  return businessOrdersRenderer(active,compact).replace(/<button class="icon-btn delete-order"/g,'<button class="icon-btn mark-delivered" data-delivery-action="mark"').replace(/>🗑 Xoá<\/button>/g,'>✓ Đã giao<\/button>');
+};
+
+const openModalBusinessFinal=openModal;
+openModal=function(type,item={}){
+  openModalBusinessFinal(type,item);
+  if(type!=='order')return;
+  const form=document.querySelector('#modal-form'), preview=form?.querySelector('.order-preview');
+  if(!form||!preview||form.querySelector('.full-payment-options'))return;
+  preview.insertAdjacentHTML('beforebegin',`<div class="field full full-payment-options"><label class="check-option"><input type="checkbox" name="customerPaidFull" ${item.id&&Math.max(item.customerPaid||item.paid||0,item.customerDeposit||0)>=item.sell?'checked':''}><span>Khách đã thanh toán đủ</span></label><label class="check-option"><input type="checkbox" name="supplierPaidFull" ${item.id&&(item.supplierPaid||item.supplierDeposit||0)>=item.cost?'checked':''}><span>Đã thanh toán đủ cho nhà cung cấp</span></label></div>`);
+};
+
+const saveFormBusinessFinal=saveForm;
+saveForm=function(e){
+  const form=e.currentTarget;
+  if(form.dataset.type!=='order'){saveFormBusinessFinal(e);return;}
+  const id=form.dataset.id, existing=id?state.orders.find(x=>x.id===id):null;
+  const beforeCustomer=existing?Math.max(+existing.customerPaid||+existing.paid||0,+existing.customerDeposit||0):parseMoney(form.elements.customerDeposit?.value);
+  const beforeSupplier=existing?Math.max(+existing.supplierPaid||0,+existing.supplierDeposit||0):parseMoney(form.elements.supplierDeposit?.value);
+  const customerFull=form.elements.customerPaidFull?.checked===true, supplierFull=form.elements.supplierPaidFull?.checked===true;
+  saveFormBusinessFinal(e);
+  const order=id?state.orders.find(x=>x.id===id):state.orders[0];
+  if(!order)return;
+  order.paymentHistory=order.paymentHistory||[];
+  const stamp=nowLocal(), customerTarget=customerFull?+order.sell||0:Math.max(+order.customerPaid||0,+order.customerDeposit||0), supplierTarget=supplierFull?+order.cost||0:Math.max(+order.supplierPaid||0,+order.supplierDeposit||0);
+  const customerDelta=Math.max(0,customerTarget-beforeCustomer), supplierDelta=Math.max(0,supplierTarget-beforeSupplier);
+  if(customerDelta){order.customerPaid=customerTarget;order.customerLastPaymentAt=stamp;order.paymentHistory.push({party:'customer',kind:'payment',amount:customerDelta,date:stamp});state.businessBalance+=customerDelta;state.balanceMoves.unshift({id:`order-customer-${Date.now()}`,date:stamp,amount:customerDelta,note:`Khách ${order.customer} thanh toán`});}
+  if(supplierDelta){order.supplierPaid=supplierTarget;order.supplierLastPaymentAt=stamp;order.paymentHistory.push({party:'supplier',kind:'payment',amount:supplierDelta,date:stamp});state.businessBalance-=supplierDelta;state.balanceMoves.unshift({id:`order-supplier-${Date.now()}`,date:stamp,amount:-supplierDelta,note:`Thanh toán nhà cung cấp cho ${order.customer}`});}
+  if(!existing){const profit=(+order.sell||0)-(+order.cost||0);if(profit){state.businessBalance+=profit;state.balanceMoves.unshift({id:`order-profit-${Date.now()}`,date:stamp,amount:profit,note:`Lợi nhuận đơn hàng ${order.customer}`});}}
+  save();layout();toast('Đã lưu đơn hàng và cập nhật số dư');
+};
+
+function deliveredOrdersMarkup(){
+  const delivered=state.orders.filter(x=>x.delivered).sort((a,b)=>dt(b.deliveredAt||b.date)-dt(a.deliveredAt||a.date));
+  if(!delivered.length)return '<div class="empty">Chưa có đơn hàng đã giao.</div>';
+  return delivered.slice(0,30).map(x=>`<div class="delivered-order-row"><div><strong>${esc(x.customer)}</strong><small>Giao lúc ${dtf(x.deliveredAt||x.date)}</small></div><span class="badge badge-paid">Đã giao</span><b>${fmt(x.sell)}</b></div>`).join('');
+}
+function installDeliveryWorkflow(){
+  if(view!=='business')return;
+  const grid=document.querySelector('.business-grid');
+  if(grid&&!grid.querySelector('.delivered-count-card')){const card=document.createElement('div');card.className='card stat-card delivered-count-card';card.innerHTML=`<div class="stat-top">Đơn hàng đã giao</div><h2>${state.orders.filter(x=>x.delivered).length}</h2><small>Đã hoàn tất giao hàng</small>`;grid.appendChild(card)}
+  const table=document.querySelector('.table-card');
+  if(table&&!document.querySelector('.delivered-orders-panel'))table.insertAdjacentHTML('afterend',`<div class="card table-card delivered-orders-panel"><div class="card-head"><h3>Đơn hàng đã giao</h3><span class="muted">${state.orders.filter(x=>x.delivered).length} đơn</span></div>${deliveredOrdersMarkup()}</div>`);
+  document.querySelectorAll('.mark-delivered').forEach(button=>button.onclick=()=>{const order=state.orders.find(x=>x.id===button.dataset.id);if(!order)return;order.delivered=true;order.deliveredAt=nowLocal();state.history.unshift({action:'Cập nhật',type:'order',label:`${order.customer} · Đã giao hàng`,date:order.deliveredAt});save();layout();toast('Đã chuyển đơn hàng sang Đơn hàng đã giao')});
+}
+const layoutBusinessWorkflow=layout;
+layout=function(){layoutBusinessWorkflow();installDeliveryWorkflow();};
