@@ -127,7 +127,8 @@ function startCloudPolling(){
   },3000);
 }
 function authScreen(message='') {
-  document.querySelector('#app').innerHTML = `<main class="auth-shell"><section class="auth-card"><div class="auth-orb auth-orb-one"></div><div class="auth-orb auth-orb-two"></div><div class="auth-brand"><span class="brand-mark">↗</span><div><strong>Sổ Tài Chính</strong><small>Quản lý tài chính thông minh</small></div></div><div class="eyebrow">ĐỒNG BỘ MỌI THIẾT BỊ</div><h1>${authMode==='signin'?'Chào mừng bạn trở lại':'Bắt đầu quản lý tài chính'}</h1><p>${authMode==='signin'?'Đăng nhập để tiếp tục theo dõi dòng tiền của bạn.':'Tạo tài khoản để lưu dữ liệu an toàn trên cloud.'}</p><form id="auth-form"><label>Email<input name="email" type="email" autocomplete="email" required placeholder="Nhập email của bạn"></label><label>Mật khẩu<input name="password" type="password" autocomplete="current-password" required minlength="6" placeholder="Tối thiểu 6 ký tự"></label><button class="btn btn-primary auth-submit">${authMode==='signin'?'Đăng nhập':'Đăng ký ngay'} <span>→</span></button></form><div id="auth-message" class="auth-message">${esc(message)}</div><button class="btn btn-ghost auth-switch">${authMode==='signin'?'Chưa có tài khoản? Đăng ký':'Đã có tài khoản? Đăng nhập'}</button><div class="auth-credit">Hệ thống được phát triển bởi Nguyễn Linh</div></section></main>`;
+  const remembered=localStorage.getItem('so-tai-chinh-remember-until');
+  document.querySelector('#app').innerHTML = `<main class="auth-shell"><section class="auth-card"><div class="auth-orb auth-orb-one"></div><div class="auth-orb auth-orb-two"></div><div class="auth-brand"><span class="brand-mark">↗</span><div><strong>Sổ Tài Chính</strong><small>Quản lý tài chính thông minh</small></div></div><div class="eyebrow">ĐỒNG BỘ MỌI THIẾT BỊ</div><h1>${authMode==='signin'?'Chào mừng bạn trở lại':'Bắt đầu quản lý tài chính'}</h1><p>${authMode==='signin'?'Đăng nhập để tiếp tục theo dõi dòng tiền của bạn.':'Tạo tài khoản để lưu dữ liệu an toàn trên cloud.'}</p><form id="auth-form"><label>Email<input name="email" type="email" autocomplete="email" required placeholder="Nhập email của bạn"></label><label>Mật khẩu<input name="password" type="password" autocomplete="current-password" required minlength="6" placeholder="Tối thiểu 6 ký tự"></label><label class="remember-device"><input name="rememberDevice" type="checkbox" ${remembered&&+remembered>Date.now()?'checked':''}> Ghi nhớ thiết bị trong 30 ngày</label><button class="btn btn-primary auth-submit">${authMode==='signin'?'Đăng nhập':'Đăng ký ngay'} <span>→</span></button></form><div id="auth-message" class="auth-message">${esc(message)}</div><button class="btn btn-ghost auth-switch">${authMode==='signin'?'Chưa có tài khoản? Đăng ký':'Đã có tài khoản? Đăng nhập'}</button><div class="auth-credit">Hệ thống được phát triển bởi Nguyễn Linh</div></section></main>`;
   document.querySelector('#auth-form').onsubmit = handleAuth;
   document.querySelector('.auth-switch').onclick = () => { authMode = authMode==='signin'?'signup':'signin'; authScreen(); };
 }
@@ -136,6 +137,7 @@ async function handleAuth(e) {
   const result = authMode==='signin' ? await supabase.auth.signInWithPassword({email,password}) : await supabase.auth.signUp({email,password,options:{emailRedirectTo:window.location.origin}});
   if (result.error) { const messageEl=document.querySelector('#auth-message'); if(messageEl) messageEl.textContent=result.error.message; return; }
   if (!result.data.session) { const messageEl=document.querySelector('#auth-message'); if(messageEl) messageEl.textContent='Tài khoản đã được tạo. Nếu hệ thống yêu cầu xác nhận email, hãy mở email rồi đăng nhập lại.'; return; }
+  if(form.get('rememberDevice')) localStorage.setItem('so-tai-chinh-remember-until',String(Date.now()+30*24*60*60*1000)); else localStorage.removeItem('so-tai-chinh-remember-until');
   cloudUser = result.data.user; await loadCloud(); layout();
 }
 var cloudBaseLayout = layout;
@@ -148,6 +150,8 @@ layout = function() {
 };
 async function bootCloud() {
   if (!supabase) { layout(); return; }
+  const rememberUntil=Number(localStorage.getItem('so-tai-chinh-remember-until')||0);
+  if(rememberUntil&&rememberUntil<Date.now()){localStorage.removeItem('so-tai-chinh-remember-until');await supabase.auth.signOut();}
   const { data:{session} } = await supabase.auth.getSession();
   if (session?.user) { cloudUser=session.user; await loadCloud(); }
   layout();
@@ -470,7 +474,7 @@ window.addEventListener('focus',pullCloudNow);document.addEventListener('visibil
 function installSidebarToggle(){
   const side=document.querySelector('.sidebar');if(!side)return;
   const saved=localStorage.getItem('so-tai-chinh-sidebar-collapsed')==='1';document.documentElement.classList.toggle('sidebar-collapsed',saved);
-  if(!side.querySelector('#sidebar-toggle')){const b=document.createElement('button');b.id='sidebar-toggle';b.className='sidebar-toggle';b.type='button';b.title='Thu gọn menu';b.innerHTML='<span>‹</span><em>Thu gọn</em>';b.onclick=()=>{const collapsed=!document.documentElement.classList.contains('sidebar-collapsed');document.documentElement.classList.toggle('sidebar-collapsed',collapsed);localStorage.setItem('so-tai-chinh-sidebar-collapsed',collapsed?'1':'0');b.title=collapsed?'Mở rộng menu':'Thu gọn menu';b.innerHTML=`<span>${collapsed?'›':'‹'}</span><em>${collapsed?'Mở rộng':'Thu gọn'}</em>`};side.appendChild(b)}
+  if(!side.querySelector('#sidebar-toggle')){const b=document.createElement('button');b.id='sidebar-toggle';b.className='sidebar-toggle';b.type='button';b.title='Thu gọn menu';b.innerHTML='<span>☰</span><em>Thu gọn menu</em>';b.onclick=()=>{const collapsed=!document.documentElement.classList.contains('sidebar-collapsed');document.documentElement.classList.toggle('sidebar-collapsed',collapsed);localStorage.setItem('so-tai-chinh-sidebar-collapsed',collapsed?'1':'0');b.title=collapsed?'Mở rộng menu':'Thu gọn menu';b.innerHTML=`<span>${collapsed?'☰':'×'}</span><em>${collapsed?'Mở rộng menu':'Thu gọn menu'}</em>`};side.querySelector('.brand')?.after(b)}
 }
 const layoutWithSidebar=layout;
 layout=function(){layoutWithSidebar();installSidebarToggle()};
