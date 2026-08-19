@@ -51,6 +51,7 @@ const supabase = supabaseUrl && supabaseKey && !supabaseKey.startsWith('your-')
   ? createClient(supabaseUrl, supabaseKey)
   : null;
 let cloudUser = null, cloudChannel = null, cloudApplying = false, cloudSaveTimer = null, cloudPollTimer = null, cloudLastUpdated = '', authMode = 'signin';
+let cloudWriteChain = Promise.resolve();
 const nativeStorageSet = localStorage.setItem.bind(localStorage);
 localStorage.setItem = (key, value) => {
   nativeStorageSet(key, value);
@@ -447,3 +448,30 @@ function installDeliveryWorkflow(){
 }
 const layoutBusinessWorkflow=layout;
 layout=function(){layoutBusinessWorkflow();installDeliveryWorkflow();};
+
+// Reliable cross-device sync: serialize writes and pull immediately when the tab is active again.
+saveCloud=async function(data){
+  if(!cloudUser||!supabase)return;
+  const snapshot=JSON.parse(JSON.stringify(data)),updatedAt=new Date().toISOString();
+  cloudWriteChain=cloudWriteChain.then(async()=>{
+    const {error}=await supabase.from('app_states').upsert({user_id:cloudUser.id,data:snapshot,updated_at:updatedAt});
+    if(error)toast('Không thể đồng bộ: '+error.message);else cloudLastUpdated=updatedAt;
+  });
+  return cloudWriteChain;
+};
+async function pullCloudNow(){
+  if(!cloudUser||!supabase||cloudApplying)return;
+  const {data,error}=await supabase.from('app_states').select('data,updated_at').eq('user_id',cloudUser.id).maybeSingle();
+  if(error||!data?.data||!data.updated_at||data.updated_at<=cloudLastUpdated)return;
+  cloudApplying=true;cloudLastUpdated=data.updated_at;state=normaliseState(data.data);nativeStorageSet(KEY,JSON.stringify(state));document.documentElement.dataset.theme=state.theme||'light';cloudApplying=false;layout();toast('Đã đồng bộ dữ liệu mới');
+}
+window.addEventListener('focus',pullCloudNow);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')pullCloudNow()});
+
+function installSidebarToggle(){
+  const side=document.querySelector('.sidebar');if(!side)return;
+  const saved=localStorage.getItem('so-tai-chinh-sidebar-collapsed')==='1';document.documentElement.classList.toggle('sidebar-collapsed',saved);
+  if(!side.querySelector('#sidebar-toggle')){const b=document.createElement('button');b.id='sidebar-toggle';b.className='sidebar-toggle';b.type='button';b.title='Thu gọn menu';b.innerHTML='<span>‹</span><em>Thu gọn</em>';b.onclick=()=>{const collapsed=!document.documentElement.classList.contains('sidebar-collapsed');document.documentElement.classList.toggle('sidebar-collapsed',collapsed);localStorage.setItem('so-tai-chinh-sidebar-collapsed',collapsed?'1':'0');b.title=collapsed?'Mở rộng menu':'Thu gọn menu';b.innerHTML=`<span>${collapsed?'›':'‹'}</span><em>${collapsed?'Mở rộng':'Thu gọn'}</em>`};side.appendChild(b)}
+}
+const layoutWithSidebar=layout;
+layout=function(){layoutWithSidebar();installSidebarToggle()};
+if(document.querySelector('.sidebar'))layout();
