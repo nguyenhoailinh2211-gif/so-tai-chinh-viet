@@ -52,6 +52,7 @@ const supabase = supabaseUrl && supabaseKey && !supabaseKey.startsWith('your-')
   : null;
 let cloudUser = null, cloudChannel = null, cloudApplying = false, cloudPollTimer = null, cloudLastUpdated = '', authMode = 'signin';
 let cloudWriteChain = Promise.resolve();
+let saveCloud = async()=>{};
 const nativeStorageSet = localStorage.setItem.bind(localStorage);
 
 
