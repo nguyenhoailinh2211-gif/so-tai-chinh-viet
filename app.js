@@ -80,6 +80,10 @@ layout=function(){layoutPaymentLabels();refreshLatestPaymentLabels();};
 function normaliseState(data) {
   return {...seed, ...data, transactions:data?.transactions||[], orders:data?.orders||[], notes:data?.notes||[], balanceMoves:data?.balanceMoves||[], history:data?.history||[], profile:data?.profile||{name:'Tuấn Anh',email:'',phone:''}, theme:data?.theme||'light'};
 }
+function applyCloudState(data,updatedAt,message='Dữ liệu vừa được đồng bộ'){
+  if(!data||!updatedAt||updatedAt<=cloudLastUpdated)return false;
+  cloudApplying=true;cloudLastUpdated=updatedAt;state=normaliseState(data);nativeStorageSet(KEY,JSON.stringify(state));document.documentElement.dataset.theme=state.theme||'light';cloudApplying=false;layout();toast(message);return true;
+}
 async function saveCloud(data) {
   if (!cloudUser) return;
   const updatedAt = new Date().toISOString();
@@ -102,17 +106,10 @@ async function loadCloud() {
 }
 function subscribeCloud() {
   if (cloudChannel) supabase.removeChannel(cloudChannel);
-  cloudChannel = supabase.channel('app-state-' + cloudUser.id).on('postgres_changes', {event:'*', schema:'public', table:'app_states', filter:'user_id=eq.' + cloudUser.id}, payload => {
-    if (!payload.new?.data) return;
-    if (payload.new.updated_at && payload.new.updated_at <= cloudLastUpdated) return;
-    cloudLastUpdated = payload.new.updated_at || new Date().toISOString();
-    cloudApplying = true;
-    state = normaliseState(payload.new.data);
-    nativeStorageSet(KEY, JSON.stringify(state));
-    document.documentElement.dataset.theme = state.theme || 'light';
-    cloudApplying = false;
-    layout();
-    toast('Dữ liệu vừa được đồng bộ realtime');
+  cloudChannel = supabase.channel('app-state-' + cloudUser.id,{config:{broadcast:{self:false}}}).on('postgres_changes', {event:'*', schema:'public', table:'app_states', filter:'user_id=eq.' + cloudUser.id}, payload => {
+    const row=payload.new||{};applyCloudState(row.data,row.updated_at,'Dữ liệu vừa được đồng bộ realtime');
+  }).on('broadcast',{event:'state_updated'},({payload})=>{
+    if(payload?.user_id===cloudUser.id)applyCloudState(payload.data,payload.updated_at,'Dữ liệu vừa được đồng bộ realtime');
   }).subscribe(status => {
     if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') startCloudPolling();
   });
@@ -122,9 +119,9 @@ function startCloudPolling(){
   cloudPollTimer=setInterval(async()=>{
     if(!cloudUser||cloudApplying)return;
     const {data,error}=await supabase.from('app_states').select('data,updated_at').eq('user_id',cloudUser.id).maybeSingle();
-    if(error||!data?.data||!data.updated_at||data.updated_at<=cloudLastUpdated)return;
-    cloudApplying=true; cloudLastUpdated=data.updated_at; state=normaliseState(data.data); nativeStorageSet(KEY,JSON.stringify(state)); document.documentElement.dataset.theme=state.theme||'light'; cloudApplying=false; layout(); toast('Dữ liệu vừa được đồng bộ');
-  },3000);
+    if(error||!data?.data||!data.updated_at)return;
+    applyCloudState(data.data,data.updated_at,'Dữ liệu vừa được đồng bộ');
+  },1500);
 }
 function authScreen(message='') {
   const remembered=localStorage.getItem('so-tai-chinh-remember-until');
@@ -459,15 +456,15 @@ saveCloud=async function(data){
   const snapshot=JSON.parse(JSON.stringify(data)),updatedAt=new Date().toISOString();
   cloudWriteChain=cloudWriteChain.then(async()=>{
     const {error}=await supabase.from('app_states').upsert({user_id:cloudUser.id,data:snapshot,updated_at:updatedAt});
-    if(error)toast('Không thể đồng bộ: '+error.message);else cloudLastUpdated=updatedAt;
+    if(error)toast('Không thể đồng bộ: '+error.message);else {cloudLastUpdated=updatedAt;cloudChannel?.send({type:'broadcast',event:'state_updated',payload:{user_id:cloudUser.id,data:snapshot,updated_at:updatedAt}})}
   });
   return cloudWriteChain;
 };
 async function pullCloudNow(){
   if(!cloudUser||!supabase||cloudApplying)return;
   const {data,error}=await supabase.from('app_states').select('data,updated_at').eq('user_id',cloudUser.id).maybeSingle();
-  if(error||!data?.data||!data.updated_at||data.updated_at<=cloudLastUpdated)return;
-  cloudApplying=true;cloudLastUpdated=data.updated_at;state=normaliseState(data.data);nativeStorageSet(KEY,JSON.stringify(state));document.documentElement.dataset.theme=state.theme||'light';cloudApplying=false;layout();toast('Đã đồng bộ dữ liệu mới');
+  if(error||!data?.data||!data.updated_at)return;
+  applyCloudState(data.data,data.updated_at,'Đã đồng bộ dữ liệu mới');
 }
 window.addEventListener('focus',pullCloudNow);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')pullCloudNow()});
 
