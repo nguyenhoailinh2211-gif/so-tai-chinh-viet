@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 const KEY='so-tai-chinh-viet-v1', CATS=['Ăn Uống','Mua Sắm','Tiền Nhà','Tiền Học','Y Tế','Lương','Đầu Tư','Kinh Doanh','Thưởng','Khác'];
 const seed={transactions:[{id:'t1',amount:12500000,type:'income',category:'Lương',date:'2026-08-05T08:00',note:'Lương tháng 8'},{id:'t2',amount:85000,type:'expense',category:'Ăn uống',date:'2026-08-08T08:30',note:'Cà phê sáng'},{id:'t3',amount:1200000,type:'expense',category:'Mua sắm',date:'2026-08-07T17:00',note:'Đồ dùng gia đình'},{id:'t4',amount:450000,type:'expense',category:'Đội xe',date:'2026-08-04T09:00',note:'Đổ xăng và gửi xe'}],orders:[{id:'o1',customer:'Công ty Minh Anh',cost:3500000,sell:6200000,date:'2026-08-09T10:00',paid:6200000,supplierPaid:3500000},{id:'o2',customer:'Nguyễn Hoàng Nam',cost:1800000,sell:3200000,date:'2026-08-07T14:00',paid:1000000,supplierPaid:0},{id:'o3',customer:'Shop Mộc Nhiên',cost:4200000,sell:7600000,date:'2026-08-02T11:00',paid:0,supplierPaid:0}],notes:[{id:'n1',title:'Ý tưởng kinh doanh',body:'Tìm thêm nguồn hàng decor bàn làm việc, ưu tiên sản phẩm thân thiện môi trường.',date:'2026-08-08T09:00'},{id:'n2',title:'Nhắc nhở',body:'Kiểm tra lại các khoản chi định kỳ vào ngày 15 hàng tháng.',date:'2026-08-05T09:00'}],businessBalance:0,balanceMoves:[]};
 let state=JSON.parse(localStorage.getItem(KEY)||JSON.stringify(seed));state.businessBalance=+state.businessBalance||0;state.balanceMoves=state.balanceMoves||[];state.profile=state.profile||{name:'Tuấn Anh',email:'',phone:''};state.theme=state.theme||'light';document.documentElement.dataset.theme=state.theme;let view='overview',rangeType='month',customStart='',customEnd='';
-const money=n=>new Intl.NumberFormat('vi-VN').format(+n||0),fmt=n=>`${money(n)} ₫`,parseMoney=v=>+String(v||'').replace(/\D/g,'')||0,esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c])),nowLocal=()=>{const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16)},dt=s=>new Date(String(s).includes('T')?s:`${s}T00:00`),dtf=s=>dt(s).toLocaleString('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}),save=()=>{pruneData();localStorage.setItem(KEY,JSON.stringify(state));};
+const money=n=>new Intl.NumberFormat('vi-VN').format(+n||0),fmt=n=>`${money(n)} ₫`,parseMoney=v=>+String(v||'').replace(/\D/g,'')||0,esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c])),nowLocal=()=>{const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16)},dt=s=>new Date(String(s).includes('T')?s:`${s}T00:00`),dtf=s=>dt(s).toLocaleString('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}),save=()=>{pruneData();localStorage.setItem(KEY,JSON.stringify(state));if(cloudUser&&!cloudApplying)saveCloud(state);};
 function inRange(s){const d=dt(s),n=new Date();if(rangeType==='all')return true;if(rangeType==='custom')return(!customStart||d>=dt(`${customStart}T00:00`))&&(!customEnd||d<=dt(`${customEnd}T23:59`));if(rangeType==='day')return d.toDateString()===n.toDateString();const st=new Date(n);st.setHours(0,0,0,0);st.setDate(n.getDate()-(rangeType==='week'?6:rangeType==='month'?30:365));return d>=st}
 function filters(){return `<div class="filters">${[['day','Hôm nay'],['week','Tuần này'],['month','Tháng này'],['year','Năm nay'],['all','Tất cả'],['custom','Tùy chỉnh']].map(x=>`<button class="filter ${rangeType===x[0]?'active':''}" data-range="${x[0]}">${x[1]}</button>`).join('')}</div>${rangeType==='custom'?`<div class="custom-range"><input type="date" id="start-date" value="${customStart}"><span>đến</span><input type="date" id="end-date" value="${customEnd}"></div>`:''}`}
 function period(){return rangeType==='day'?'hôm nay':rangeType==='week'?'tuần này':rangeType==='year'?'năm nay':rangeType==='all'?'tất cả':'tháng này'}
@@ -50,16 +50,9 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 const supabase = supabaseUrl && supabaseKey && !supabaseKey.startsWith('your-')
   ? createClient(supabaseUrl, supabaseKey)
   : null;
-let cloudUser = null, cloudChannel = null, cloudApplying = false, cloudSaveTimer = null, cloudPollTimer = null, cloudLastUpdated = '', authMode = 'signin';
+let cloudUser = null, cloudChannel = null, cloudApplying = false, cloudPollTimer = null, cloudLastUpdated = '', authMode = 'signin';
 let cloudWriteChain = Promise.resolve();
 const nativeStorageSet = localStorage.setItem.bind(localStorage);
-localStorage.setItem = (key, value) => {
-  nativeStorageSet(key, value);
-  if (key === KEY && cloudUser && !cloudApplying) {
-    clearTimeout(cloudSaveTimer);
-    cloudSaveTimer = setTimeout(() => saveCloud(JSON.parse(value)), 350);
-  }
-};
 
 
 function refreshLatestPaymentLabels(){
@@ -84,16 +77,10 @@ function applyCloudState(data,updatedAt,message='Dữ liệu vừa được đ�
   if(!data||!updatedAt||updatedAt<=cloudLastUpdated)return false;
   cloudApplying=true;cloudLastUpdated=updatedAt;state=normaliseState(data);nativeStorageSet(KEY,JSON.stringify(state));document.documentElement.dataset.theme=state.theme||'light';cloudApplying=false;layout();toast(message);return true;
 }
-async function saveCloud(data) {
-  if (!cloudUser) return;
-  const updatedAt = new Date().toISOString();
-  const { error } = await supabase.from('app_states').upsert({user_id: cloudUser.id, data, updated_at: updatedAt});
-  if (!error) cloudLastUpdated = updatedAt;
-  if (error) toast('Không thể đồng bộ: ' + error.message);
-}
 async function loadCloud() {
-  const { data, error } = await supabase.from('app_states').select('data,updated_at').eq('user_id', cloudUser.id).maybeSingle();
-  if (error) { toast('Không thể tải dữ liệu cloud'); return; }
+  const { data:rows, error } = await supabase.from('app_states').select('data,updated_at').eq('user_id', cloudUser.id).order('updated_at',{ascending:false}).limit(1);
+  if (error) { toast('Không thể tải dữ liệu cloud: '+error.message); subscribeCloud(); startCloudPolling(); return; }
+  const data=rows?.[0];
   cloudApplying = true;
   if (data?.data) state = normaliseState(data.data);
   else await supabase.from('app_states').insert({user_id: cloudUser.id, data: state, updated_at:new Date().toISOString()});
@@ -118,8 +105,8 @@ function startCloudPolling(){
   clearInterval(cloudPollTimer);
   cloudPollTimer=setInterval(async()=>{
     if(!cloudUser||cloudApplying)return;
-    const {data,error}=await supabase.from('app_states').select('data,updated_at').eq('user_id',cloudUser.id).maybeSingle();
-    if(error||!data?.data||!data.updated_at)return;
+    const {data:rows,error}=await supabase.from('app_states').select('data,updated_at').eq('user_id',cloudUser.id).order('updated_at',{ascending:false}).limit(1);
+    const data=rows?.[0];if(error||!data?.data||!data.updated_at)return;
     applyCloudState(data.data,data.updated_at,'Dữ liệu vừa được đồng bộ');
   },1500);
 }
@@ -451,19 +438,27 @@ const layoutBusinessWorkflow=layout;
 layout=function(){layoutBusinessWorkflow();installDeliveryWorkflow();};
 
 // Reliable cross-device sync: serialize writes and pull immediately when the tab is active again.
+async function writeCloudState(snapshot,updatedAt){
+  const payload={user_id:cloudUser.id,data:snapshot,updated_at:updatedAt};
+  const updated=await supabase.from('app_states').update({data:snapshot,updated_at:updatedAt}).eq('user_id',cloudUser.id).select('user_id').limit(1);
+  if(updated.error)return updated.error;
+  if(updated.data?.length)return null;
+  const inserted=await supabase.from('app_states').insert(payload);
+  return inserted.error||null;
+}
 saveCloud=async function(data){
   if(!cloudUser||!supabase)return;
   const snapshot=JSON.parse(JSON.stringify(data)),updatedAt=new Date().toISOString();
   cloudWriteChain=cloudWriteChain.then(async()=>{
-    const {error}=await supabase.from('app_states').upsert({user_id:cloudUser.id,data:snapshot,updated_at:updatedAt});
+    const error=await writeCloudState(snapshot,updatedAt);
     if(error)toast('Không thể đồng bộ: '+error.message);else {cloudLastUpdated=updatedAt;cloudChannel?.send({type:'broadcast',event:'state_updated',payload:{user_id:cloudUser.id,data:snapshot,updated_at:updatedAt}})}
   });
   return cloudWriteChain;
 };
 async function pullCloudNow(){
   if(!cloudUser||!supabase||cloudApplying)return;
-  const {data,error}=await supabase.from('app_states').select('data,updated_at').eq('user_id',cloudUser.id).maybeSingle();
-  if(error||!data?.data||!data.updated_at)return;
+  const {data:rows,error}=await supabase.from('app_states').select('data,updated_at').eq('user_id',cloudUser.id).order('updated_at',{ascending:false}).limit(1);
+  const data=rows?.[0];if(error||!data?.data||!data.updated_at)return;
   applyCloudState(data.data,data.updated_at,'Đã đồng bộ dữ liệu mới');
 }
 window.addEventListener('focus',pullCloudNow);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')pullCloudNow()});
